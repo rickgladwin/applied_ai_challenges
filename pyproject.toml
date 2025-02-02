@@ -3,4 +3,7 @@ name = "applied-ai-challenges"
 version = "0.1.0"
 description = "Weekly challenges for U of Hull Applied AI module"
 requires-python = ">=3.12"
-dependencies = []
+dependencies = [
+    "notebook>=7.3.2",
+    "pandas>=2.2.3",
+]
