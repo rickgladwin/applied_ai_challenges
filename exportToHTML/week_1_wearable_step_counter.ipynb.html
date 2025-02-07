@@ -1,0 +1,500 @@
+<html>
+<head>
+<title>week_1_wearable_step_counter.ipynb</title>
+<meta http-equiv="Content-Type" content="text/html; charset=utf-8">
+<style type="text/css">
+.s0 { color: #699856;}
+.s1 { color: #d4d4d4;}
+.s2 { color: #47a2ed;}
+.s3 { color: #fdfcfc;}
+.s4 { color: #cd9069;}
+.s5 { color: #b4cda8;}
+.s6 { color: #d7ba7d;}
+.ls0 { height: 1px; border-width: 0; color: #4d4d4d; background-color:#4d4d4d}
+</style>
+</head>
+<body bgcolor="#1e1e1e">
+<table CELLSPACING=0 CELLPADDING=5 COLS=1 WIDTH="100%" BGCOLOR="#606060" >
+<tr><td><center>
+<font face="Arial, Helvetica" color="#000000">
+week_1_wearable_step_counter.ipynb</font>
+</center></td></tr></table>
+<pre><span class="s0">#%% md 
+</span><span class="s1"># Wearable step counter 
+ 
+## Data import, filtering, and fixing 
+ 
+### import <hr class="ls0"></span><span class="s0">#%% 
+</span><span class="s2">import </span><span class="s1">pandas </span><span class="s2">as </span><span class="s1">pd</span>
+<span class="s2">import </span><span class="s1">openpyxl</span>
+
+<span class="s0"># get the step counter data from the data file</span>
+<span class="s1">data_file</span><span class="s3">: </span><span class="s1">str </span><span class="s3">= </span><span class="s4">'./resources/femaleWalk.xlsx'</span>
+<span class="s1">walk_df </span><span class="s3">= </span><span class="s1">pd.read_excel(data_file)</span>
+<span class="s1">display(walk_df.head())</span>
+<span class="s1">display(walk_df.tail())</span>
+
+<span class="s0"># final row in data file says &quot;finish Activity Duration : 2 minutes12seconds&quot;</span>
+<span class="s0"># 132s, 50Hz --&gt; 6600 data points. But there are 8320 records in the dataset, so the actual data</span>
+<span class="s0"># says 8321 data points (zero indexed minus summary line), 132s --&gt; 63.03787879Hz --&gt; 63.0Hz</span>
+
+<span class="s0"># Set the sampling frequency that we'll use throughout the calculations</span>
+<span class="s0"># NOTE: the analysis works and gives reasonable results with either of these frequencies,</span>
+<span class="s0"># but using 63Hz in the calculations results in what seems like more accurate results. See final cell.</span>
+<span class="s1">sample_freq </span><span class="s3">= </span><span class="s5">63</span>
+<span class="s0"># sample_freq = 50</span>
+<hr class="ls0"><span class="s0">#%% md 
+</span><span class="s1">### fixing and filtering 
+We'll extract just the x, y, and z accelerometer data and use `pydantic` to validate the data types and structure. <hr class="ls0"></span><span class="s0">#%% 
+# check data types</span>
+<span class="s2">from </span><span class="s1">numpy </span><span class="s2">import </span><span class="s1">float64</span>
+<span class="s2">from </span><span class="s1">pydantic </span><span class="s2">import </span><span class="s1">BaseModel, FiniteFloat</span>
+
+<span class="s0"># we only need the accelerometer data from the 3 axes, so...</span>
+<span class="s1">walk_df </span><span class="s3">= </span><span class="s1">walk_df[[</span><span class="s4">'accdatax'</span><span class="s1">, </span><span class="s4">'accdatay'</span><span class="s1">, </span><span class="s4">'accdataz'</span><span class="s1">]]</span>
+<span class="s0"># remove the summary row</span>
+<span class="s1">walk_df </span><span class="s3">= </span><span class="s1">walk_df.iloc[</span><span class="s3">:-</span><span class="s5">1</span><span class="s1">]</span>
+<span class="s0"># convert the accdatax column to float</span>
+<span class="s1">walk_df[</span><span class="s4">'accdatax'</span><span class="s1">] </span><span class="s3">= </span><span class="s1">walk_df[</span><span class="s4">'accdatax'</span><span class="s1">].astype(</span><span class="s4">'float64'</span><span class="s1">)</span>
+<span class="s0"># show dtypes</span>
+<span class="s1">print(walk_df.dtypes)</span>
+
+<span class="s1">display(walk_df.head())</span>
+<span class="s1">display(walk_df.tail())</span>
+
+<span class="s2">class </span><span class="s1">AccData(BaseModel)</span><span class="s3">:</span>
+    <span class="s1">accdatax</span><span class="s3">: </span><span class="s1">FiniteFloat </span><span class="s0"># invalidates inf, -inf, and nan</span>
+    <span class="s1">accdatay</span><span class="s3">: </span><span class="s1">FiniteFloat</span>
+    <span class="s1">accdataz</span><span class="s3">: </span><span class="s1">FiniteFloat</span>
+
+<span class="s2">for </span><span class="s1">index, row </span><span class="s2">in </span><span class="s1">walk_df.iterrows()</span><span class="s3">:</span>
+    <span class="s2">try</span><span class="s3">:</span>
+        <span class="s1">AccData(</span><span class="s3">**</span><span class="s1">row.to_dict())</span>
+    <span class="s2">except </span><span class="s1">Exception </span><span class="s2">as </span><span class="s1">e</span><span class="s3">:</span>
+        <span class="s1">print(e)</span>
+<hr class="ls0"><span class="s0">#%% md 
+</span><span class="s1">### display data on one plot <hr class="ls0"></span><span class="s0">#%% 
+</span><span class="s2">import </span><span class="s1">matplotlib.pyplot </span><span class="s2">as </span><span class="s1">plt</span>
+
+<span class="s1">x_df </span><span class="s3">= </span><span class="s1">walk_df[</span><span class="s4">'accdatax'</span><span class="s1">]</span>
+<span class="s1">fig, ax </span><span class="s3">= </span><span class="s1">plt.subplots(</span><span class="s5">1</span><span class="s1">, </span><span class="s5">1</span><span class="s1">, figsize</span><span class="s3">=</span><span class="s1">(</span><span class="s5">12</span><span class="s1">, </span><span class="s5">5</span><span class="s1">))</span>
+<span class="s1">ax.plot(x_df)</span>
+<span class="s1">plt.show()</span>
+<hr class="ls0"><span class="s0">#%% md 
+</span><span class="s1">There seems to be some beginning and ending event in the data, separate from the walking pattern (perhaps an act of getting up and sitting down, or switch bounce in the measurement device), so we'll use a sample from the middle of the dataset... <hr class="ls0"></span><span class="s0">#%% 
+</span><span class="s2">import </span><span class="s1">matplotlib.colors </span><span class="s2">as </span><span class="s1">mcolors</span>
+
+<span class="s0"># select 900 data points around the middle of the data</span>
+<span class="s1">walk_sample_df </span><span class="s3">= </span><span class="s1">walk_df.iloc[</span><span class="s5">2100</span><span class="s3">:</span><span class="s5">3000</span><span class="s1">]</span>
+
+<span class="s1">x_color </span><span class="s3">= </span><span class="s1">mcolors.TABLEAU_COLORS[</span><span class="s4">&quot;tab:red&quot;</span><span class="s1">]</span>
+<span class="s1">y_color </span><span class="s3">= </span><span class="s1">mcolors.TABLEAU_COLORS[</span><span class="s4">&quot;tab:green&quot;</span><span class="s1">]</span>
+<span class="s1">z_color </span><span class="s3">= </span><span class="s1">mcolors.TABLEAU_COLORS[</span><span class="s4">&quot;tab:blue&quot;</span><span class="s1">]</span>
+
+<span class="s1">x_sample_df </span><span class="s3">= </span><span class="s1">walk_sample_df[</span><span class="s4">'accdatax'</span><span class="s1">]</span>
+<span class="s1">y_sample_df </span><span class="s3">= </span><span class="s1">walk_sample_df[</span><span class="s4">'accdatay'</span><span class="s1">]</span>
+<span class="s1">z_sample_df </span><span class="s3">= </span><span class="s1">walk_sample_df[</span><span class="s4">'accdataz'</span><span class="s1">]</span>
+<span class="s1">sample_index </span><span class="s3">= </span><span class="s1">walk_sample_df.index</span>
+<span class="s1">fig, ax </span><span class="s3">= </span><span class="s1">plt.subplots(</span><span class="s5">1</span><span class="s1">, </span><span class="s5">1</span><span class="s1">, figsize</span><span class="s3">=</span><span class="s1">(</span><span class="s5">12</span><span class="s1">, </span><span class="s5">5</span><span class="s1">), constrained_layout</span><span class="s3">=</span><span class="s2">True</span><span class="s1">)</span>
+<span class="s1">ax.plot(sample_index, x_sample_df, label</span><span class="s3">=</span><span class="s4">'x axis'</span><span class="s1">, color</span><span class="s3">=</span><span class="s1">x_color)</span>
+<span class="s1">ax.plot(sample_index, y_sample_df, label</span><span class="s3">=</span><span class="s4">'y axis'</span><span class="s1">, color</span><span class="s3">=</span><span class="s1">y_color)</span>
+<span class="s1">ax.plot(sample_index, z_sample_df, label</span><span class="s3">=</span><span class="s4">'z axis'</span><span class="s1">, color</span><span class="s3">=</span><span class="s1">z_color)</span>
+<span class="s1">min_y</span><span class="s3">: </span><span class="s1">float </span><span class="s3">= </span><span class="s1">min(x_sample_df.min(), y_sample_df.min(), z_sample_df.min()) </span><span class="s3">- </span><span class="s5">1.0</span>
+
+<span class="s1">ax.set_ylim(bottom</span><span class="s3">=</span><span class="s1">min_y, top</span><span class="s3">=</span><span class="s5">8.0</span><span class="s1">)</span>
+<span class="s1">ax.legend(title</span><span class="s3">=</span><span class="s4">'Accelerometer Data'</span><span class="s1">, loc</span><span class="s3">=</span><span class="s4">'upper right'</span><span class="s1">)</span>
+<span class="s1">plt.show()</span><hr class="ls0"><span class="s0">#%% md 
+</span><span class="s1">There appears to be a base signal for each of the accelerometers plus some jitter. 
+We'll perform a fast Fourier transform on each signal in order to determine how best to filter out the higher-frequency (lower amplitude) jitter. 
+ 
+For the FFT sampling frequency, we make use of Nyquist Theorem: 
+$$f_{Nyquist} = F_s/2$$ 
+Where $F_s$ is the sampling frequency of the source data, and $f_{Nyquist}$ is the maximum frequency up to which the signal can be represented (if there were frequencies higher than this in the behaviour being detected by the accelerometer, they will not be represented in the data, and a Fourier transform cannot accurately represent them). 
+ 
+The FFT will produce a frequency spectrum from $-F_s/2$ to $F_s/2$, and we'll take the real (positive) values only, so 0Hz to $(F_s/2)$Hz 
+ 
+So if we use an FFT sampling frequency of 50Hz or 63Hz (matching the data sampling frequency), we'll get the most accurate representation. <hr class="ls0"></span><span class="s0">#%% 
+</span><span class="s2">import </span><span class="s1">numpy </span><span class="s2">as </span><span class="s1">np</span>
+
+<span class="s0"># we'll choose an FFT sampling frequency matching the source sample frequency</span>
+<span class="s1">fft_sample_freq </span><span class="s3">= </span><span class="s1">sample_freq</span>
+<span class="s1">fft_sample_interval </span><span class="s3">= </span><span class="s5">1 </span><span class="s3">/ </span><span class="s1">fft_sample_freq</span>
+<span class="s0"># we need time data for the independent axis (in place of sample index)</span>
+<span class="s0"># we can trust the datasheet and take the sampling rate to be 50Hz, or use the calculated rate of 63Hz</span>
+<span class="s0"># so each sample index maps to a time delta of (1/50)s or (1/63)s</span>
+<span class="s1">sample_count </span><span class="s3">= </span><span class="s1">len(walk_sample_df)</span>
+<span class="s1">print(</span><span class="s4">f&quot;sample count: </span><span class="s6">{</span><span class="s1">sample_count</span><span class="s6">}</span><span class="s4">&quot;</span><span class="s1">)</span>
+<span class="s1">time_series </span><span class="s3">= </span><span class="s1">np.arange(</span><span class="s5">0</span><span class="s1">, sample_count </span><span class="s3">/ </span><span class="s1">sample_freq, </span><span class="s5">1 </span><span class="s3">/ </span><span class="s1">sample_freq)</span>
+<span class="s1">print(time_series[</span><span class="s3">:</span><span class="s5">20</span><span class="s1">])</span>
+<span class="s1">fft_y </span><span class="s3">= </span><span class="s1">np.fft.fft(y_sample_df)</span>
+<span class="s1">fft_y_freq </span><span class="s3">= </span><span class="s1">np.fft.fftfreq(len(time_series), fft_sample_interval)</span>
+<span class="s1">fft_magnitude </span><span class="s3">= </span><span class="s1">np.abs(fft_y)</span>
+
+<span class="s1">print(fft_y_freq)</span>
+<span class="s1">print(len(fft_y_freq))</span>
+<span class="s0"># using 63Hz in place of 50Hz results in one more sample datapoint, so we trim the series</span>
+<span class="s2">if </span><span class="s1">sample_freq </span><span class="s3">== </span><span class="s5">63</span><span class="s3">:</span>
+    <span class="s1">fft_y_freq </span><span class="s3">= </span><span class="s1">fft_y_freq[</span><span class="s3">:-</span><span class="s5">1</span><span class="s1">]</span>
+    <span class="s1">time_series </span><span class="s3">= </span><span class="s1">time_series[</span><span class="s3">:-</span><span class="s5">1</span><span class="s1">]</span>
+
+<span class="s1">positive_freq_indices </span><span class="s3">= </span><span class="s1">fft_y_freq </span><span class="s3">&gt; </span><span class="s5">0</span>
+<span class="s1">print(positive_freq_indices)</span>
+<span class="s1">print(len(positive_freq_indices))</span>
+<span class="s1">fft_y_freq </span><span class="s3">= </span><span class="s1">fft_y_freq[positive_freq_indices]</span>
+<span class="s1">fft_magnitude </span><span class="s3">= </span><span class="s1">fft_magnitude[positive_freq_indices]</span>
+
+<span class="s1">plt.figure(figsize</span><span class="s3">=</span><span class="s1">(</span><span class="s5">12</span><span class="s1">, </span><span class="s5">5</span><span class="s1">))</span>
+
+<span class="s1">plt.subplot(</span><span class="s5">2</span><span class="s1">,</span><span class="s5">1</span><span class="s1">, </span><span class="s5">1</span><span class="s1">)</span>
+<span class="s1">plt.plot(time_series, y_sample_df, label</span><span class="s3">=</span><span class="s4">'y axis'</span><span class="s1">, color</span><span class="s3">=</span><span class="s1">y_color)</span>
+<span class="s1">plt.title(</span><span class="s4">&quot;Original Signal (Time Domain)&quot;</span><span class="s1">)</span>
+<span class="s1">plt.xlabel(</span><span class="s4">&quot;Time (s)&quot;</span><span class="s1">)</span>
+<span class="s1">plt.ylabel(</span><span class="s4">&quot;Amplitude&quot;</span><span class="s1">)</span>
+
+<span class="s1">plt.subplot(</span><span class="s5">2</span><span class="s1">,</span><span class="s5">1</span><span class="s1">,</span><span class="s5">2</span><span class="s1">)</span>
+<span class="s1">plt.plot(fft_y_freq, fft_magnitude, color</span><span class="s3">=</span><span class="s1">y_color)</span>
+<span class="s1">plt.title(</span><span class="s4">&quot;Magnitude of Fourier Transform (Frequency Domain)&quot;</span><span class="s1">)</span>
+<span class="s1">plt.xlabel(</span><span class="s4">&quot;Frequency (Hz)&quot;</span><span class="s1">)</span>
+<span class="s1">plt.ylabel(</span><span class="s4">&quot;Amplitude&quot;</span><span class="s1">)</span>
+<span class="s1">plt.grid()</span>
+
+<span class="s1">plt.tight_layout()</span>
+<span class="s1">plt.show()</span><hr class="ls0"><span class="s0">#%% md 
+</span><span class="s1">We want to filter out frequencies above and below set thresholds, i.e. apply a bandpass filter. 
+ 
+A Google search for &quot;numpy bandpass filter&quot; leads us to 
+https://scipy-cookbook.readthedocs.io/items/ButterworthBandpass.html 
+ 
+Other students in this module, Layth Al-Shareefi [^1] and Alberto Zuin [^2], have used a Butterworth filter as well, so it looks like we're on the right track. 
+ <hr class="ls0"></span><span class="s0">#%% md 
+</span><span class="s1">Let's zoom in on those primary frequencies in the Fourier transform, so we can choose a high and low cutoff for the bandpass filter 
+ 
+For the FFT sampling <hr class="ls0"></span><span class="s0">#%% 
+</span><span class="s2">from </span><span class="s1">numpy </span><span class="s2">import </span><span class="s1">ndarray</span>
+
+<span class="s0"># show a smaller range of frequency values for the second plot</span>
+
+<span class="s0"># we'll choose a sampling frequency for the FFT that's the same as the sampling</span>
+<span class="s0"># frequency for the source data. See Nyquist Theorem and FFT behaviour</span>
+<span class="s1">fft_sample_freq </span><span class="s3">= </span><span class="s1">sample_freq</span>
+<span class="s1">fft_sample_interval </span><span class="s3">= </span><span class="s5">1 </span><span class="s3">/ </span><span class="s1">fft_sample_freq</span>
+<span class="s0"># we need time data for the independent axis (in place of sample index)</span>
+<span class="s1">time_series </span><span class="s3">= </span><span class="s1">np.arange(</span><span class="s5">0</span><span class="s1">, sample_count </span><span class="s3">/ </span><span class="s1">sample_freq, </span><span class="s5">1 </span><span class="s3">/ </span><span class="s1">sample_freq)</span>
+<span class="s0"># print(time_series[:20])</span>
+<span class="s1">fft_y </span><span class="s3">= </span><span class="s1">np.fft.fft(y_sample_df)</span>
+<span class="s1">fft_y_freq</span><span class="s3">: </span><span class="s1">ndarray </span><span class="s3">= </span><span class="s1">np.fft.fftfreq(len(time_series), fft_sample_interval)</span>
+<span class="s1">fft_magnitude</span><span class="s3">: </span><span class="s1">ndarray </span><span class="s3">= </span><span class="s1">np.abs(fft_y)</span>
+<span class="s0"># using 63Hz in place of 50Hz results in one more sample datapoint, so we trim the series</span>
+<span class="s2">if </span><span class="s1">sample_freq </span><span class="s3">== </span><span class="s5">63</span><span class="s3">:</span>
+    <span class="s1">fft_y_freq </span><span class="s3">= </span><span class="s1">fft_y_freq[</span><span class="s3">:-</span><span class="s5">1</span><span class="s1">]</span>
+    <span class="s1">time_series </span><span class="s3">= </span><span class="s1">time_series[</span><span class="s3">:-</span><span class="s5">1</span><span class="s1">]</span>
+
+<span class="s1">positive_freq_indices </span><span class="s3">= </span><span class="s1">fft_y_freq </span><span class="s3">&gt; </span><span class="s5">0</span>
+<span class="s1">fft_y_freq </span><span class="s3">= </span><span class="s1">fft_y_freq[positive_freq_indices]</span>
+<span class="s1">fft_magnitude </span><span class="s3">= </span><span class="s1">fft_magnitude[positive_freq_indices]</span>
+
+<span class="s0"># keep a range of frequencies for the independent axis</span>
+<span class="s1">freq_range_indices </span><span class="s3">= </span><span class="s1">fft_y_freq </span><span class="s3">&lt;= </span><span class="s5">5</span>
+<span class="s1">filtered_y_freq</span><span class="s3">: </span><span class="s1">ndarray </span><span class="s3">= </span><span class="s1">fft_y_freq[freq_range_indices]</span>
+<span class="s1">filtered_magnitude</span><span class="s3">: </span><span class="s1">ndarray </span><span class="s3">= </span><span class="s1">fft_magnitude[freq_range_indices]</span>
+
+<span class="s1">plt.figure(figsize</span><span class="s3">=</span><span class="s1">(</span><span class="s5">12</span><span class="s1">, </span><span class="s5">5</span><span class="s1">))</span>
+
+<span class="s1">plt.subplot(</span><span class="s5">2</span><span class="s1">,</span><span class="s5">1</span><span class="s1">,</span><span class="s5">1</span><span class="s1">)</span>
+<span class="s1">plt.plot(time_series, y_sample_df, label</span><span class="s3">=</span><span class="s4">'y axis'</span><span class="s1">, color</span><span class="s3">=</span><span class="s1">y_color)</span>
+<span class="s1">plt.title(</span><span class="s4">&quot;Original Signal (Time Domain)&quot;</span><span class="s1">)</span>
+<span class="s1">plt.xlabel(</span><span class="s4">&quot;Time (s)&quot;</span><span class="s1">)</span>
+<span class="s1">plt.ylabel(</span><span class="s4">&quot;Amplitude&quot;</span><span class="s1">)</span>
+
+<span class="s1">plt.subplot(</span><span class="s5">2</span><span class="s1">,</span><span class="s5">1</span><span class="s1">,</span><span class="s5">2</span><span class="s1">)</span>
+<span class="s1">plt.plot(filtered_y_freq, filtered_magnitude, color</span><span class="s3">=</span><span class="s1">y_color)</span>
+<span class="s1">plt.title(</span><span class="s4">&quot;Magnitude of Fourier Transform (Frequency Domain) &lt;= 25Hz&quot;</span><span class="s1">)</span>
+<span class="s1">plt.xlabel(</span><span class="s4">&quot;Frequency (Hz)&quot;</span><span class="s1">)</span>
+<span class="s1">plt.ylabel(</span><span class="s4">&quot;Amplitude&quot;</span><span class="s1">)</span>
+<span class="s1">plt.grid()</span>
+
+<span class="s1">plt.tight_layout()</span>
+<span class="s1">plt.show()</span>
+
+<span class="s0"># A Google search for &quot;numpy bandpass filter&quot; leads us to the Scipy documentation for Butterworth bandpass filtering [^3]</span>
+<hr class="ls0"><span class="s0">#%% 
+</span><span class="s2">from </span><span class="s1">scipy.signal </span><span class="s2">import </span><span class="s1">butter, lfilter, freqz</span>
+
+<span class="s2">def </span><span class="s1">butter_bandpass(lowcut, highcut, fs, order</span><span class="s3">=</span><span class="s5">5</span><span class="s1">)</span><span class="s3">:</span>
+    <span class="s1">nyq </span><span class="s3">= </span><span class="s5">0.5 </span><span class="s3">* </span><span class="s1">fs</span>
+    <span class="s1">low </span><span class="s3">= </span><span class="s1">lowcut </span><span class="s3">/ </span><span class="s1">nyq</span>
+    <span class="s1">high </span><span class="s3">= </span><span class="s1">highcut </span><span class="s3">/ </span><span class="s1">nyq</span>
+    <span class="s1">b, a </span><span class="s3">= </span><span class="s1">butter(order, [low, high], btype</span><span class="s3">=</span><span class="s4">'band'</span><span class="s1">)</span>
+    <span class="s2">return </span><span class="s1">b, a</span>
+
+<span class="s2">def </span><span class="s1">butter_bandpass_filter(data, lowcut, highcut, fs, order</span><span class="s3">=</span><span class="s5">5</span><span class="s1">)</span><span class="s3">:</span>
+    <span class="s1">b, a </span><span class="s3">= </span><span class="s1">butter_bandpass(lowcut, highcut, fs, order</span><span class="s3">=</span><span class="s1">order)</span>
+    <span class="s1">y </span><span class="s3">= </span><span class="s1">lfilter(b, a, data)</span>
+    <span class="s2">return </span><span class="s1">y</span>
+
+<span class="s1">fs </span><span class="s3">= </span><span class="s1">sample_freq</span>
+<span class="s0"># NOTE: if we filter out the higher of these two primary frequencies, we get a signal without a</span>
+<span class="s0"># consistent amplitude (unusable). If we filter out the lower, we get a smooth signal at a</span>
+<span class="s0"># higher frequency than the step frequency appears to be. It seems that the signal pattern</span>
+<span class="s0"># for a step from the y axis data is a combination of these two frequencies. Letting both of these</span>
+<span class="s0"># frequencies pass is the only way to get the gait signal without the noise.</span>
+
+<span class="s1">lowcut </span><span class="s3">= </span><span class="s5">0.5</span>
+<span class="s0"># lowcut = 1.25</span>
+<span class="s0"># highcut = 1.0</span>
+<span class="s0"># highcut = 1.75</span>
+<span class="s1">highcut </span><span class="s3">= </span><span class="s5">2.5</span>
+
+<span class="s1">x_color_2 </span><span class="s3">= </span><span class="s1">mcolors.TABLEAU_COLORS[</span><span class="s4">&quot;tab:pink&quot;</span><span class="s1">]</span>
+<span class="s1">y_color_2 </span><span class="s3">= </span><span class="s1">mcolors.TABLEAU_COLORS[</span><span class="s4">&quot;tab:olive&quot;</span><span class="s1">]</span>
+<span class="s1">z_color_2 </span><span class="s3">= </span><span class="s1">mcolors.TABLEAU_COLORS[</span><span class="s4">&quot;tab:cyan&quot;</span><span class="s1">]</span>
+
+<span class="s1">plt.figure(</span><span class="s5">1</span><span class="s1">)</span>
+<span class="s1">plt.clf()</span>
+<span class="s2">for </span><span class="s1">order </span><span class="s2">in </span><span class="s1">[</span><span class="s5">3</span><span class="s1">, </span><span class="s5">6</span><span class="s1">, </span><span class="s5">9</span><span class="s1">]</span><span class="s3">:</span>
+    <span class="s1">b, a </span><span class="s3">= </span><span class="s1">butter_bandpass(lowcut, highcut, fs, order</span><span class="s3">=</span><span class="s1">order)</span>
+    <span class="s1">w, h </span><span class="s3">= </span><span class="s1">freqz(b, a, worN</span><span class="s3">=</span><span class="s5">2000</span><span class="s1">)</span>
+    <span class="s1">plt.plot((fs </span><span class="s3">* </span><span class="s5">0.5 </span><span class="s3">/ </span><span class="s1">np.pi) </span><span class="s3">* </span><span class="s1">w, abs(h), label</span><span class="s3">=</span><span class="s4">'Order %d' </span><span class="s3">% </span><span class="s1">order)</span>
+
+<span class="s1">plt.plot([</span><span class="s5">0</span><span class="s1">, </span><span class="s5">0.5 </span><span class="s3">* </span><span class="s1">fs], [np.sqrt(</span><span class="s5">0.5</span><span class="s1">), np.sqrt(</span><span class="s5">0.5</span><span class="s1">)], </span><span class="s4">'--'</span><span class="s1">, label</span><span class="s3">=</span><span class="s4">'sqrt(0.5)'</span><span class="s1">)</span>
+<span class="s1">plt.xlabel(</span><span class="s4">'Frequency (Hz)'</span><span class="s1">)</span>
+<span class="s1">plt.ylabel(</span><span class="s4">'Gain'</span><span class="s1">)</span>
+<span class="s1">plt.title(</span><span class="s4">'Butterworth filter gain curve'</span><span class="s1">)</span>
+<span class="s1">plt.grid(</span><span class="s2">True</span><span class="s1">)</span>
+<span class="s1">plt.legend(loc</span><span class="s3">=</span><span class="s4">'best'</span><span class="s1">)</span>
+
+<span class="s0"># Filter a noisy signal.</span>
+<span class="s1">T </span><span class="s3">= </span><span class="s5">0.05</span>
+<span class="s1">nsamples </span><span class="s3">= </span><span class="s1">int(T </span><span class="s3">* </span><span class="s1">fs)</span>
+<span class="s1">t </span><span class="s3">= </span><span class="s1">np.linspace(</span><span class="s5">0</span><span class="s1">, T, nsamples, endpoint</span><span class="s3">=</span><span class="s2">False</span><span class="s1">)</span>
+<span class="s1">a </span><span class="s3">= </span><span class="s5">0.02</span>
+<span class="s1">f0 </span><span class="s3">= </span><span class="s5">600.0</span>
+<span class="s1">x </span><span class="s3">= </span><span class="s5">0.1 </span><span class="s3">* </span><span class="s1">np.sin(</span><span class="s5">2 </span><span class="s3">* </span><span class="s1">np.pi </span><span class="s3">* </span><span class="s5">1.2 </span><span class="s3">* </span><span class="s1">np.sqrt(t))</span>
+<span class="s1">x </span><span class="s3">+= </span><span class="s5">0.01 </span><span class="s3">* </span><span class="s1">np.cos(</span><span class="s5">2 </span><span class="s3">* </span><span class="s1">np.pi </span><span class="s3">* </span><span class="s5">312 </span><span class="s3">* </span><span class="s1">t </span><span class="s3">+ </span><span class="s5">0.1</span><span class="s1">)</span>
+<span class="s1">x </span><span class="s3">+= </span><span class="s1">a </span><span class="s3">* </span><span class="s1">np.cos(</span><span class="s5">2 </span><span class="s3">* </span><span class="s1">np.pi </span><span class="s3">* </span><span class="s1">f0 </span><span class="s3">* </span><span class="s1">t </span><span class="s3">+ </span><span class="s5">.11</span><span class="s1">)</span>
+<span class="s1">x </span><span class="s3">+= </span><span class="s5">0.03 </span><span class="s3">* </span><span class="s1">np.cos(</span><span class="s5">2 </span><span class="s3">* </span><span class="s1">np.pi </span><span class="s3">* </span><span class="s5">2000 </span><span class="s3">* </span><span class="s1">t)</span>
+
+<span class="s1">plt.figure(</span><span class="s5">2</span><span class="s1">, figsize</span><span class="s3">=</span><span class="s1">(</span><span class="s5">12</span><span class="s1">, </span><span class="s5">5</span><span class="s1">))</span>
+<span class="s1">plt.clf()</span>
+<span class="s1">plt.plot(time_series, y_sample_df, label</span><span class="s3">=</span><span class="s4">'Noisy accdatay'</span><span class="s1">, color</span><span class="s3">=</span><span class="s1">y_color)</span>
+
+<span class="s0"># y = butter_bandpass_filter(x, lowcut, highcut, fs, order=6)</span>
+<span class="s1">y </span><span class="s3">= </span><span class="s1">butter_bandpass_filter(y_sample_df, lowcut, highcut, fs, order</span><span class="s3">=</span><span class="s5">6</span><span class="s1">)</span>
+<span class="s1">plt.plot(time_series, y, label</span><span class="s3">=</span><span class="s4">f&quot;Filtered accdatay (</span><span class="s6">{</span><span class="s1">lowcut</span><span class="s6">} </span><span class="s4">- </span><span class="s6">{</span><span class="s1">highcut</span><span class="s6">} </span><span class="s4">Hz)&quot;</span><span class="s1">, color</span><span class="s3">=</span><span class="s1">y_color_2)</span>
+<span class="s1">plt.xlabel(</span><span class="s4">'time (seconds)'</span><span class="s1">)</span>
+<span class="s1">plt.hlines([</span><span class="s3">-</span><span class="s1">a, a], </span><span class="s5">0</span><span class="s1">, T, linestyles</span><span class="s3">=</span><span class="s4">'--'</span><span class="s1">)</span>
+<span class="s1">plt.grid(</span><span class="s2">True</span><span class="s1">)</span>
+<span class="s1">plt.axis(</span><span class="s4">'tight'</span><span class="s1">)</span>
+<span class="s1">plt.legend(loc</span><span class="s3">=</span><span class="s4">'upper left'</span><span class="s1">)</span>
+
+<span class="s1">plt.show()</span><hr class="ls0"><span class="s0">#%% md 
+</span><span class="s1">It looks like there are peaks near .75Hz and 1.5Hz, so let's use .5Hz and 1.75Hz as the cutoff frequencies (we're eyeballing it here – if required we could set an amplitude threshold and filter out any frequencies that don't reach that value on the frequency domain plot) <hr class="ls0"></span><span class="s0">#%% md 
+</span><span class="s1">Let's repeat this for the x and z data <hr class="ls0"></span><span class="s0">#%% 
+</span><span class="s2">import </span><span class="s1">numpy </span><span class="s2">as </span><span class="s1">np</span>
+
+<span class="s2">def </span><span class="s1">fft_plots(fft_sample_freq</span><span class="s3">: </span><span class="s1">int, data_series</span><span class="s3">: </span><span class="s1">ndarray, series_label</span><span class="s3">: </span><span class="s1">str, series_color, grid_color)</span><span class="s3">:</span>
+    <span class="s1">fft_sample_interval </span><span class="s3">= </span><span class="s5">1 </span><span class="s3">/ </span><span class="s1">fft_sample_freq</span>
+    <span class="s1">sample_count </span><span class="s3">= </span><span class="s1">len(data_series)</span>
+    <span class="s1">time_series </span><span class="s3">= </span><span class="s1">np.arange(</span><span class="s5">0</span><span class="s1">, sample_count </span><span class="s3">/ </span><span class="s1">fft_sample_freq, </span><span class="s5">1 </span><span class="s3">/ </span><span class="s1">fft_sample_freq)</span>
+    <span class="s1">fft_result </span><span class="s3">= </span><span class="s1">np.fft.fft(data_series)</span>
+    <span class="s1">fft_result_freq </span><span class="s3">= </span><span class="s1">np.fft.fftfreq(len(time_series), fft_sample_interval)</span>
+    <span class="s1">fft_magnitude </span><span class="s3">= </span><span class="s1">np.abs(fft_result)</span>
+
+    <span class="s0"># using 63Hz in place of 50Hz results in one more sample datapoint, so we trim the series</span>
+    <span class="s2">if </span><span class="s1">sample_freq </span><span class="s3">== </span><span class="s5">63</span><span class="s3">:</span>
+        <span class="s1">fft_result_freq </span><span class="s3">= </span><span class="s1">fft_result_freq[</span><span class="s3">:-</span><span class="s5">1</span><span class="s1">]</span>
+        <span class="s1">time_series </span><span class="s3">= </span><span class="s1">time_series[</span><span class="s3">:-</span><span class="s5">1</span><span class="s1">]</span>
+
+    <span class="s1">positive_freq_indices </span><span class="s3">= </span><span class="s1">fft_result_freq </span><span class="s3">&gt; </span><span class="s5">0</span>
+    <span class="s1">fft_result_freq </span><span class="s3">= </span><span class="s1">fft_result_freq[positive_freq_indices]</span>
+    <span class="s1">fft_magnitude </span><span class="s3">= </span><span class="s1">fft_magnitude[positive_freq_indices]</span>
+    <span class="s1">plt.figure(figsize</span><span class="s3">=</span><span class="s1">(</span><span class="s5">12</span><span class="s1">, </span><span class="s5">5</span><span class="s1">))</span>
+    <span class="s1">plt.subplot(</span><span class="s5">2</span><span class="s1">,</span><span class="s5">1</span><span class="s1">, </span><span class="s5">1</span><span class="s1">)</span>
+    <span class="s1">plt.plot(time_series, data_series, label</span><span class="s3">=</span><span class="s1">series_label, color</span><span class="s3">=</span><span class="s1">series_color)</span>
+    <span class="s1">plt.title(</span><span class="s4">f&quot;Original Signal (Time Domain) for </span><span class="s6">{</span><span class="s1">series_label</span><span class="s6">}</span><span class="s4">&quot;</span><span class="s1">)</span>
+    <span class="s1">plt.xlabel(</span><span class="s4">&quot;Time (s)&quot;</span><span class="s1">)</span>
+    <span class="s1">plt.ylabel(</span><span class="s4">&quot;Amplitude&quot;</span><span class="s1">)</span>
+
+    <span class="s1">plt.subplot(</span><span class="s5">2</span><span class="s1">,</span><span class="s5">1</span><span class="s1">,</span><span class="s5">2</span><span class="s1">)</span>
+    <span class="s1">plt.plot(fft_result_freq, fft_magnitude, color</span><span class="s3">=</span><span class="s1">series_color)</span>
+    <span class="s1">plt.title(</span><span class="s4">f&quot;Magnitude of Fourier Transform (Frequency Domain) for </span><span class="s6">{</span><span class="s1">series_label</span><span class="s6">}</span><span class="s4">&quot;</span><span class="s1">)</span>
+    <span class="s1">interval </span><span class="s3">= </span><span class="s5">0.5</span>
+    <span class="s1">xtick_positions </span><span class="s3">= </span><span class="s1">np.arange(</span><span class="s5">0</span><span class="s1">, max(fft_result_freq) </span><span class="s3">+ </span><span class="s1">interval, interval)</span>
+    <span class="s1">plt.xticks(xtick_positions, rotation</span><span class="s3">=-</span><span class="s5">90</span><span class="s1">)</span>
+    <span class="s1">plt.vlines(x</span><span class="s3">=</span><span class="s1">xtick_positions, ymin</span><span class="s3">=</span><span class="s1">min(fft_magnitude), ymax</span><span class="s3">=</span><span class="s1">max(fft_magnitude), color</span><span class="s3">=</span><span class="s1">grid_color, linestyles</span><span class="s3">=</span><span class="s4">'-'</span><span class="s1">, alpha</span><span class="s3">=</span><span class="s5">0.3</span><span class="s1">)</span>
+    <span class="s1">plt.xlabel(</span><span class="s4">&quot;Frequency (Hz)&quot;</span><span class="s1">)</span>
+    <span class="s1">plt.ylabel(</span><span class="s4">&quot;Amplitude&quot;</span><span class="s1">)</span>
+    <span class="s1">plt.grid()</span>
+
+    <span class="s1">plt.tight_layout()</span>
+    <span class="s1">plt.show()</span>
+
+<span class="s1">fft_plots(sample_freq, y_sample_df, </span><span class="s4">&quot;y axis&quot;</span><span class="s1">, y_color, </span><span class="s4">&quot;darkgrey&quot;</span><span class="s1">)</span>
+<span class="s1">fft_plots(sample_freq, x_sample_df, </span><span class="s4">&quot;x axis&quot;</span><span class="s1">, x_color, </span><span class="s4">&quot;darkgrey&quot;</span><span class="s1">)</span>
+<span class="s1">fft_plots(sample_freq, z_sample_df, </span><span class="s4">&quot;z axis&quot;</span><span class="s1">, z_color, </span><span class="s4">&quot;darkgrey&quot;</span><span class="s1">)</span>
+
+<hr class="ls0"><span class="s0">#%% md 
+</span><span class="s1">It appears as though the other axes have slightly different frequency characteristics (which makes sense, since 
+the accelerometer data will be measuring the result of various component movements of body parts during walking, 
+with different amplitudes in each axis. 
+ 
+Also, look at the noise in z around 4.5Hz. That's maybe consistent noise from a physical vibration? Or something to do with the forearm movement while walking? 
+ 
+Note that there's a spike around 4.5Hz for both z and x, but not for y. Also z and x have 3 base frequencies, while y has 2. Is y actually the data for the accelerometer normal to the watch face? 
+ 
+We might consider adjusting the phase of one or two of the signals if we're going to use a sum. 
+ 
+Let's perform the smoothing for the other two axes. <hr class="ls0"></span><span class="s0">#%% 
+</span><span class="s1">https</span><span class="s3">://</span><span class="s1">scipy</span><span class="s3">-</span><span class="s1">cookbook.readthedocs.io</span><span class="s3">/</span><span class="s1">items</span><span class="s3">/</span><span class="s1">ButterworthBandpass.html</span><hr class="ls0"><span class="s0">#%% 
+</span><span class="s1">fs </span><span class="s3">= </span><span class="s1">sample_freq</span>
+<span class="s0"># NOTE: if we filter out the higher of these two primary frequencies, we get a signal without a</span>
+<span class="s0"># consistent amplitude (unusable). If we filter out the lower, we get a smooth signal at a</span>
+<span class="s0"># higher frequency than the step frequency appears to be. It seems that the signal pattern</span>
+<span class="s0"># for a step from the y axis data is a combination of these two frequencies. Letting both of these</span>
+<span class="s0"># frequencies pass is the only way to get the gait signal without the noise.</span>
+
+<span class="s1">lowcut </span><span class="s3">= </span><span class="s5">0.5</span>
+<span class="s0"># 63Hz vs 50Hz sampling rates result in different calculated frequency distributions,</span>
+<span class="s0"># so we set a different band depending on sample_freq</span>
+<span class="s2">if </span><span class="s1">sample_freq </span><span class="s3">== </span><span class="s5">50</span><span class="s3">:</span>
+    <span class="s1">highcut </span><span class="s3">= </span><span class="s5">2.5</span>
+<span class="s2">else</span><span class="s3">:</span>
+    <span class="s1">highcut </span><span class="s3">= </span><span class="s5">3.0</span>
+
+<span class="s0"># Filter a noisy signal.</span>
+<span class="s1">T </span><span class="s3">= </span><span class="s5">0.05</span>
+<span class="s1">a </span><span class="s3">= </span><span class="s5">0.02</span>
+
+<span class="s1">plt.figure(</span><span class="s5">3</span><span class="s1">, figsize</span><span class="s3">=</span><span class="s1">(</span><span class="s5">12</span><span class="s1">, </span><span class="s5">5</span><span class="s1">))</span>
+<span class="s1">plt.clf()</span>
+<span class="s1">plt.plot(time_series, x_sample_df, label</span><span class="s3">=</span><span class="s4">'Noisy accdatax'</span><span class="s1">, color</span><span class="s3">=</span><span class="s1">x_color)</span>
+
+<span class="s1">x </span><span class="s3">= </span><span class="s1">butter_bandpass_filter(x_sample_df, lowcut, highcut, fs, order</span><span class="s3">=</span><span class="s5">6</span><span class="s1">)</span>
+<span class="s1">plt.plot(time_series, x, label</span><span class="s3">=</span><span class="s4">f&quot;Filtered accdatax (</span><span class="s6">{</span><span class="s1">lowcut</span><span class="s6">} </span><span class="s4">- </span><span class="s6">{</span><span class="s1">highcut</span><span class="s6">} </span><span class="s4">Hz)&quot;</span><span class="s1">, color</span><span class="s3">=</span><span class="s1">x_color_2)</span>
+<span class="s1">plt.xlabel(</span><span class="s4">'time (seconds)'</span><span class="s1">)</span>
+<span class="s1">plt.hlines([</span><span class="s3">-</span><span class="s1">a, a], </span><span class="s5">0</span><span class="s1">, T, linestyles</span><span class="s3">=</span><span class="s4">'--'</span><span class="s1">)</span>
+<span class="s1">plt.grid(</span><span class="s2">True</span><span class="s1">)</span>
+<span class="s1">plt.axis(</span><span class="s4">'tight'</span><span class="s1">)</span>
+<span class="s1">plt.legend(loc</span><span class="s3">=</span><span class="s4">'upper left'</span><span class="s1">)</span>
+
+<span class="s1">plt.figure(</span><span class="s5">4</span><span class="s1">, figsize</span><span class="s3">=</span><span class="s1">(</span><span class="s5">12</span><span class="s1">, </span><span class="s5">5</span><span class="s1">))</span>
+<span class="s1">plt.clf()</span>
+<span class="s1">plt.plot(time_series, z_sample_df, label</span><span class="s3">=</span><span class="s4">'Noisy accdataz'</span><span class="s1">, color</span><span class="s3">=</span><span class="s1">z_color)</span>
+<span class="s1">z </span><span class="s3">= </span><span class="s1">butter_bandpass_filter(z_sample_df, lowcut, highcut, fs, order</span><span class="s3">=</span><span class="s5">6</span><span class="s1">)</span>
+<span class="s1">plt.plot(time_series, z, label</span><span class="s3">=</span><span class="s4">f&quot;Filtered accdatax (</span><span class="s6">{</span><span class="s1">lowcut</span><span class="s6">} </span><span class="s4">- </span><span class="s6">{</span><span class="s1">highcut</span><span class="s6">} </span><span class="s4">Hz)&quot;</span><span class="s1">, color</span><span class="s3">=</span><span class="s1">z_color_2)</span>
+<span class="s1">plt.xlabel(</span><span class="s4">'time (seconds)'</span><span class="s1">)</span>
+<span class="s1">plt.hlines([</span><span class="s3">-</span><span class="s1">a, a], </span><span class="s5">0</span><span class="s1">, T, linestyles</span><span class="s3">=</span><span class="s4">'--'</span><span class="s1">)</span>
+<span class="s1">plt.grid(</span><span class="s2">True</span><span class="s1">)</span>
+<span class="s1">plt.axis(</span><span class="s4">'tight'</span><span class="s1">)</span>
+<span class="s1">plt.legend(loc</span><span class="s3">=</span><span class="s4">'upper left'</span><span class="s1">)</span>
+
+<span class="s1">plt.show()</span>
+<hr class="ls0"><span class="s0">#%% md 
+</span><span class="s1">Now we'll take a sum of the smoothed seria <hr class="ls0"></span><span class="s0">#%% 
+</span><span class="s1">plt.figure(</span><span class="s5">5</span><span class="s1">, figsize</span><span class="s3">=</span><span class="s1">(</span><span class="s5">12</span><span class="s1">, </span><span class="s5">5</span><span class="s1">))</span>
+<span class="s1">plt.plot(time_series, x, label</span><span class="s3">=</span><span class="s4">f&quot;Filtered accdatax (</span><span class="s6">{</span><span class="s1">lowcut</span><span class="s6">} </span><span class="s4">- </span><span class="s6">{</span><span class="s1">highcut</span><span class="s6">} </span><span class="s4">Hz)&quot;</span><span class="s1">, color</span><span class="s3">=</span><span class="s1">x_color_2)</span>
+<span class="s1">plt.plot(time_series, y, label</span><span class="s3">=</span><span class="s4">f&quot;Filtered accdatay (</span><span class="s6">{</span><span class="s1">lowcut</span><span class="s6">} </span><span class="s4">- </span><span class="s6">{</span><span class="s1">highcut</span><span class="s6">} </span><span class="s4">Hz)&quot;</span><span class="s1">, color</span><span class="s3">=</span><span class="s1">y_color_2)</span>
+<span class="s1">plt.plot(time_series, z, label</span><span class="s3">=</span><span class="s4">f&quot;Filtered accdataz (</span><span class="s6">{</span><span class="s1">lowcut</span><span class="s6">} </span><span class="s4">- </span><span class="s6">{</span><span class="s1">highcut</span><span class="s6">} </span><span class="s4">Hz)&quot;</span><span class="s1">, color</span><span class="s3">=</span><span class="s1">z_color_2)</span>
+
+<span class="s1">plt.xlabel(</span><span class="s4">'time (seconds)'</span><span class="s1">)</span>
+<span class="s1">plt.hlines([</span><span class="s3">-</span><span class="s1">a, a], </span><span class="s5">0</span><span class="s1">, T, linestyles</span><span class="s3">=</span><span class="s4">'--'</span><span class="s1">)</span>
+<span class="s1">plt.grid(</span><span class="s2">True</span><span class="s1">)</span>
+<span class="s1">plt.axis(</span><span class="s4">'tight'</span><span class="s1">)</span>
+<span class="s1">plt.legend(loc</span><span class="s3">=</span><span class="s4">'upper left'</span><span class="s1">)</span>
+
+<span class="s1">plt.show()</span><hr class="ls0"><span class="s0">#%% md 
+</span><span class="s1">Before summing let's normalize the amplitudes, since we care about the patterns in the signal from each axis, <hr class="ls0"></span><span class="s0">#%% 
+</span><span class="s1">x_normalized </span><span class="s3">= </span><span class="s1">x </span><span class="s3">/ </span><span class="s1">np.max(np.abs(x))</span>
+<span class="s1">y_normalized </span><span class="s3">= </span><span class="s1">y </span><span class="s3">/ </span><span class="s1">np.max(np.abs(y))</span>
+<span class="s1">z_normalized </span><span class="s3">= </span><span class="s1">z </span><span class="s3">/ </span><span class="s1">np.max(np.abs(z))</span>
+
+<span class="s1">plt.figure(</span><span class="s5">6</span><span class="s1">, figsize</span><span class="s3">=</span><span class="s1">(</span><span class="s5">12</span><span class="s1">, </span><span class="s5">5</span><span class="s1">))</span>
+<span class="s1">plt.plot(time_series, x_normalized, label</span><span class="s3">=</span><span class="s4">f&quot;Filtered normalized accdatax (</span><span class="s6">{</span><span class="s1">lowcut</span><span class="s6">} </span><span class="s4">- </span><span class="s6">{</span><span class="s1">highcut</span><span class="s6">} </span><span class="s4">Hz)&quot;</span><span class="s1">, color</span><span class="s3">=</span><span class="s1">x_color_2)</span>
+<span class="s1">plt.plot(time_series, y_normalized, label</span><span class="s3">=</span><span class="s4">f&quot;Filtered normalized accdatay (</span><span class="s6">{</span><span class="s1">lowcut</span><span class="s6">} </span><span class="s4">- </span><span class="s6">{</span><span class="s1">highcut</span><span class="s6">} </span><span class="s4">Hz)&quot;</span><span class="s1">, color</span><span class="s3">=</span><span class="s1">y_color_2)</span>
+<span class="s1">plt.plot(time_series, z_normalized, label</span><span class="s3">=</span><span class="s4">f&quot;Filtered normalized accdataz (</span><span class="s6">{</span><span class="s1">lowcut</span><span class="s6">} </span><span class="s4">- </span><span class="s6">{</span><span class="s1">highcut</span><span class="s6">} </span><span class="s4">Hz)&quot;</span><span class="s1">, color</span><span class="s3">=</span><span class="s1">z_color_2)</span>
+
+<span class="s1">plt.xlabel(</span><span class="s4">'time (seconds)'</span><span class="s1">)</span>
+<span class="s1">plt.hlines([</span><span class="s3">-</span><span class="s1">a, a], </span><span class="s5">0</span><span class="s1">, T, linestyles</span><span class="s3">=</span><span class="s4">'--'</span><span class="s1">)</span>
+<span class="s1">plt.grid(</span><span class="s2">True</span><span class="s1">)</span>
+<span class="s1">plt.axis(</span><span class="s4">'tight'</span><span class="s1">)</span>
+<span class="s1">plt.legend(loc</span><span class="s3">=</span><span class="s4">'upper left'</span><span class="s1">)</span>
+
+<span class="s1">plt.show()</span><hr class="ls0"><span class="s0">#%% md 
+</span><span class="s1">Now let's sum the normalized signals <hr class="ls0"></span><span class="s0">#%% 
+</span><span class="s1">acc_sum </span><span class="s3">= </span><span class="s1">x_normalized </span><span class="s3">+ </span><span class="s1">y_normalized </span><span class="s3">+ </span><span class="s1">z_normalized</span>
+<span class="s1">plt.figure(</span><span class="s5">7</span><span class="s1">, figsize</span><span class="s3">=</span><span class="s1">(</span><span class="s5">12</span><span class="s1">, </span><span class="s5">5</span><span class="s1">))</span>
+<span class="s1">plt.plot(time_series, acc_sum, label</span><span class="s3">=</span><span class="s4">f&quot;Filtered normalized accdata (</span><span class="s6">{</span><span class="s1">lowcut</span><span class="s6">} </span><span class="s4">- </span><span class="s6">{</span><span class="s1">highcut</span><span class="s6">} </span><span class="s4">Hz)&quot;</span><span class="s1">, color</span><span class="s3">=</span><span class="s1">y_color_2)</span>
+
+<span class="s1">plt.axhline(y </span><span class="s3">= </span><span class="s1">acc_sum.mean(), color</span><span class="s3">=</span><span class="s4">'r'</span><span class="s1">, linestyle</span><span class="s3">=</span><span class="s4">'-'</span><span class="s1">)</span>
+<span class="s2">if </span><span class="s1">sample_freq </span><span class="s3">== </span><span class="s5">50</span><span class="s3">:</span>
+    <span class="s0"># cycle_cross_height when using 50Hz sampling frequency</span>
+    <span class="s1">cycle_cross_height </span><span class="s3">= -</span><span class="s5">0.595</span>
+<span class="s2">else</span><span class="s3">:</span>
+    <span class="s0"># cycle_cross_height when using 63Hz sampling frequency</span>
+    <span class="s1">cycle_cross_height </span><span class="s3">= </span><span class="s5">0.5</span>
+
+<span class="s1">plt.axhline(y </span><span class="s3">= </span><span class="s1">cycle_cross_height, color</span><span class="s3">=</span><span class="s4">'blue'</span><span class="s1">, linestyle</span><span class="s3">=</span><span class="s4">'--'</span><span class="s1">)</span>
+
+<span class="s1">plt.xlabel(</span><span class="s4">'time (seconds)'</span><span class="s1">)</span>
+<span class="s1">plt.hlines([</span><span class="s3">-</span><span class="s1">a, a], </span><span class="s5">0</span><span class="s1">, T, linestyles</span><span class="s3">=</span><span class="s4">'--'</span><span class="s1">)</span>
+<span class="s1">plt.grid(</span><span class="s2">True</span><span class="s1">)</span>
+<span class="s1">plt.axis(</span><span class="s4">'tight'</span><span class="s1">)</span>
+<span class="s1">plt.legend(loc</span><span class="s3">=</span><span class="s4">'upper left'</span><span class="s1">)</span>
+
+<span class="s1">plt.show()</span><hr class="ls0"><span class="s0">#%% md 
+</span><span class="s1">There appears to be a cyclical pattern in the combined signal, which is what we're looking for if we want to identify a pattern representing walking. I've drawn a horizontal line at the mean of the signal amplitude, and another chosen based on visual inspection. 
+ 
+The blue horizontal line has been placed in order to intersect with the signal line twice (one with slope up and one with slope down) per cycle. There's likely a way to automate this, but I've done it by hand for now. <hr class="ls0"></span><span class="s0">#%% 
+# Mean crossing</span>
+
+<span class="s1">mean_crossing </span><span class="s3">= </span><span class="s1">acc_sum.copy()</span>
+<span class="s1">mean_crossing </span><span class="s3">= </span><span class="s1">pd.DataFrame(mean_crossing)</span>
+<span class="s0"># create a dataframe showing if the mapped value is greater than or equal to the mean value (results in a column of boolean values)</span>
+<span class="s1">result </span><span class="s3">= </span><span class="s1">mean_crossing.ge(mean_crossing.mean())</span>
+<span class="s1">result.columns </span><span class="s3">= </span><span class="s1">[</span><span class="s4">'greater_than_or_equal_to_mean'</span><span class="s1">]</span>
+<span class="s0"># display(result)</span>
+
+<span class="s0"># NOTE: we need to add a column name (and not just use .iloc) because of the way pandas handles dtype conversions. Using .iloc with .astype results in a warning.</span>
+<span class="s1">result[</span><span class="s4">'greater_than_or_equal_to_mean'</span><span class="s1">] </span><span class="s3">= </span><span class="s1">result[</span><span class="s4">'greater_than_or_equal_to_mean'</span><span class="s1">].astype(int).replace({</span><span class="s5">0</span><span class="s3">:-</span><span class="s5">1</span><span class="s1">})</span>
+<span class="s1">result.plot(figsize</span><span class="s3">=</span><span class="s1">(</span><span class="s5">12</span><span class="s1">, </span><span class="s5">5</span><span class="s1">))</span>
+<span class="s1">plt.title(</span><span class="s4">&quot;crossing data using mean crossing&quot;</span><span class="s1">)</span>
+<span class="s1">plt.legend(loc</span><span class="s3">=</span><span class="s4">'upper left'</span><span class="s1">, framealpha</span><span class="s3">=</span><span class="s5">0.5</span><span class="s1">, bbox_to_anchor</span><span class="s3">=</span><span class="s1">(</span><span class="s5">1</span><span class="s1">, </span><span class="s5">1</span><span class="s1">))</span>
+
+<span class="s1">meanCrossingCount </span><span class="s3">= </span><span class="s1">np.where(np.diff(np.sign(result.to_numpy().reshape(</span><span class="s3">-</span><span class="s5">1</span><span class="s1">))))[</span><span class="s5">0</span><span class="s1">]</span>
+
+<span class="s1">print(</span><span class="s4">f&quot;mean crossing count is </span><span class="s6">{</span><span class="s1">len(meanCrossingCount)</span><span class="s6">}</span><span class="s4">&quot;</span><span class="s1">)</span>
+
+<span class="s0"># cycle crossing count</span>
+
+<span class="s1">cycle_crossing </span><span class="s3">= </span><span class="s1">acc_sum.copy()</span>
+<span class="s1">cycle_crossing </span><span class="s3">= </span><span class="s1">pd.DataFrame(cycle_crossing)</span>
+<span class="s1">result2 </span><span class="s3">= </span><span class="s1">cycle_crossing.ge(cycle_cross_height)</span>
+<span class="s1">result2.columns </span><span class="s3">= </span><span class="s1">[</span><span class="s4">'greater_than_or_equal_to_threshold'</span><span class="s1">]</span>
+<span class="s1">result2[</span><span class="s4">'greater_than_or_equal_to_threshold'</span><span class="s1">] </span><span class="s3">= </span><span class="s1">result2[[</span><span class="s4">'greater_than_or_equal_to_threshold'</span><span class="s1">]].astype(int).replace({</span><span class="s5">0</span><span class="s3">:-</span><span class="s5">1</span><span class="s1">})</span>
+<span class="s1">result2.plot(figsize</span><span class="s3">=</span><span class="s1">(</span><span class="s5">12</span><span class="s1">, </span><span class="s5">5</span><span class="s1">))</span>
+<span class="s1">plt.title(</span><span class="s4">&quot;crossing data using cycle counting&quot;</span><span class="s1">)</span>
+<span class="s1">plt.legend(loc</span><span class="s3">=</span><span class="s4">'upper left'</span><span class="s1">, framealpha</span><span class="s3">=</span><span class="s5">0.5</span><span class="s1">, bbox_to_anchor</span><span class="s3">=</span><span class="s1">(</span><span class="s5">1</span><span class="s1">, </span><span class="s5">1</span><span class="s1">))</span>
+
+<span class="s1">cycleCrossingCount </span><span class="s3">= </span><span class="s1">np.where(np.diff(np.sign(result2.to_numpy().reshape(</span><span class="s3">-</span><span class="s5">1</span><span class="s1">))))[</span><span class="s5">0</span><span class="s1">]</span>
+<span class="s1">print(</span><span class="s4">f&quot;cycle crossing count is </span><span class="s6">{</span><span class="s1">len(cycleCrossingCount)</span><span class="s6">}</span><span class="s4">&quot;</span><span class="s1">)</span>
+<hr class="ls0"><span class="s0">#%% md 
+</span><span class="s1">Identifying this repeating cycle in the signal and assuming that's the walking gait results in a more evenly-spaced set of &quot;crosses&quot;, which is what we expect if we're looking for a signal that will represent a walking gait with a consistent speed. 
+ 
+Using known step counts and taking samples in this way from different parts of the data, we could calculate a regression line for predicting step count from accelerometer data. The line would have a different equation from the one used with the &quot;moving average and mean crossing&quot; technique. 
+ 
+For the processed signal above, there are 13 steps (26 / 2) for each foot in 900 samples or 18 seconds (at 50Hz sampling rate), or **26 steps total**. 
+ 
+In a quick experiment, a very slow walking pace for me is about **23 steps** in 18 seconds, so this result seems reasonable. 
+ 
+Note that if we use 63Hz for the sampling rate (implied by the data rather than the specs for the device), we get **26 steps in 14 seconds**. 
+ 
+A normal walking pace for me is about **24 steps in 14 seconds**, so I'm inclined to believe the sampling rate is closer to 63Hz (though I don't know about the stride of the subjects from which the walking data came) <hr class="ls0"></span><span class="s0">#%% md 
+</span><span class="s1">## References 
+ 
+[^1] Layth, Al-Shareefi (2025) Week 1 challenge forum post https://canvas.hull.ac.uk/courses/74215/discussion_topics/452148?module_item_id=1255768 [accessed Feb 2025] 
+ 
+[^2] Zuin, Alberto (2025) Alberto Zuin - Applied AI - Week 1, https://www.kaggle.com/code/albertozuin/alberto-zuin-applied-ai-week-1 [accessed Feb 2025] 
+ 
+[^3] Scipy documentation (2020) Butterworth Bandpass https://scipy-cookbook.readthedocs.io/items/ButterworthBandpass.html [accessed Feb 2025]</span></pre>
+</body>
+</html>
