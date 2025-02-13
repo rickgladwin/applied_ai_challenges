@@ -2,12 +2,15 @@
 name = "applied-ai-challenges"
 version = "0.1.0"
 description = "Weekly challenges for U of Hull Applied AI module"
-requires-python = ">=3.12"
+readme = "README.md"
+requires-python = "~=3.11"
 dependencies = [
-    "matplotlib>=3.10.0",
-    "notebook>=7.3.2",
-    "openpyxl>=3.1.5",
-    "pandas>=2.2.3",
-    "pydantic>=2.10.6",
-    "scipy>=1.15.1",
+    "numpy",
+    "tensorflow>=2.x",
+    "pandas",
+    "tqdm",
+    "plotly",
+    "matplotlib",
+    "ipython",
+    "jupyterlab",
 ]
